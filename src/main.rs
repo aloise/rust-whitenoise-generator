@@ -1,21 +1,27 @@
-
 use std::time::Duration;
-use std::io::BufReader;
-use std::thread;
-use rodio::{Decoder, OutputStream, source::Source, Sample};
+use std::{env, process, thread};
+use rodio::{OutputStream, source::Source};
 use rand::random;
 
 // Our own source of white noise.
 struct WhiteNoise {
-    duration: Duration,
     elapsed: Duration,
+    tick: usize,
+    buffer: Vec<f32>,
+    buffer_size: usize,
 }
 
+const WHITE_NOISE_SAMPLE_RATE: u32 = 44100;
+const WHITE_NOISE_TICK_DURATION: Duration = Duration::from_micros(1_000_000 as u64 / WHITE_NOISE_SAMPLE_RATE as u64);
+
 impl WhiteNoise {
-    fn new(duration: Duration) -> Self {
+    fn new(buffer_ms: usize) -> Self {
+        let buffer_samples = buffer_ms * WHITE_NOISE_SAMPLE_RATE as usize / 1000;
         Self {
-            duration,
             elapsed: Duration::from_secs(0),
+            tick: 0,
+            buffer: (0..buffer_samples).map(|_| random::<f32>() * 2.0 - 1.0).collect(),
+            buffer_size: buffer_samples,
         }
     }
 }
@@ -24,12 +30,10 @@ impl Iterator for WhiteNoise {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
-        if self.elapsed >= self.duration {
-            None
-        } else {
-            self.elapsed += Duration::from_secs_f32(1.0 / 44100.0);
-            Some(random::<f32>() * 2.0 - 1.0)
-        }
+        self.elapsed += WHITE_NOISE_TICK_DURATION;
+        self.tick = (self.tick + 1) % self.buffer_size;
+
+        Some(self.buffer[self.tick])
     }
 }
 
@@ -43,7 +47,7 @@ impl Source for WhiteNoise {
     }
 
     fn sample_rate(&self) -> u32 {
-        44100
+        WHITE_NOISE_SAMPLE_RATE
     }
 
     fn total_duration(&self) -> Option<Duration> {
@@ -52,10 +56,20 @@ impl Source for WhiteNoise {
 }
 
 fn main() {
-    print!("Playing White noise...");
+    let args: Vec<String> = env::args().collect();
+
+    // Try to parse the argument as a u16
+    let num: usize = args.get(1)
+        .map_or(10000, |arg| arg.parse().unwrap_or_else(|_| {
+            eprintln!("Invalid argument. Exiting.");
+            process::exit(1);
+        }));
+
+    println!("Playing White noise with a {}ms buffer", num);
+
     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
 
-    let source = WhiteNoise::new(Duration::from_secs(5));
+    let source = WhiteNoise::new(num);
     stream_handle.play_raw(source).unwrap();
 
     thread::park()
