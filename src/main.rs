@@ -1,7 +1,8 @@
 use std::time::Duration;
 use std::{env, process, thread};
-use rodio::{OutputStream, source::Source};
+use rodio::{cpal, DeviceTrait, OutputStream, source::Source};
 use rand::random;
+use rodio::cpal::traits::HostTrait;
 
 // Our own source of white noise.
 struct WhiteNoise {
@@ -20,7 +21,7 @@ impl WhiteNoise {
         Self {
             elapsed: Duration::from_secs(0),
             tick: 0,
-            buffer: (0..buffer_samples).map(|_| random::<f32>() * 2.0 - 1.0).collect(),
+            buffer: (0..buffer_samples).map(|_| random::<f32>() * 1.0 - 2.0).collect(),
             buffer_size: buffer_samples,
         }
     }
@@ -67,10 +68,32 @@ fn main() {
 
     println!("Playing White noise with a {}ms buffer", num);
 
-    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let devices = match cpal::default_host().output_devices() {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("Invalid argument. Exiting.");
+            process::exit(2)
+        }
+    };
 
-    let source = WhiteNoise::new(num);
-    stream_handle.play_raw(source).unwrap();
+
+    for dev in devices {
+        thread::spawn(move || {
+            let device_name = dev.name().unwrap();
+
+            let source = WhiteNoise::new(num);
+
+            println!("Playing on device: {}", device_name);
+
+            match OutputStream::try_from_device(&dev) {
+                Ok((_stream, stream_handle)) => {
+                    stream_handle.play_raw(source).unwrap();
+                    thread::park();
+                },
+                Err(_) => eprintln!("Error creating stream on device {}", device_name),
+            };
+        });
+    }
 
     thread::park()
 }
