@@ -1,6 +1,6 @@
 use std::time::Duration;
 use std::{env, process, thread};
-use rodio::{cpal, DeviceTrait, OutputStream, source::Source};
+use rodio::{cpal, Device, DeviceTrait, OutputStream, source::Source};
 use rand::random;
 use rodio::cpal::traits::HostTrait;
 
@@ -10,19 +10,24 @@ struct WhiteNoise {
     tick: usize,
     buffer: Vec<f32>,
     buffer_size: usize,
+    ramp_up_samples: usize,
 }
 
 const WHITE_NOISE_SAMPLE_RATE: u32 = 44100;
 const WHITE_NOISE_TICK_DURATION: Duration = Duration::from_micros(1_000_000 as u64 / WHITE_NOISE_SAMPLE_RATE as u64);
 
 impl WhiteNoise {
-    fn new(buffer_ms: usize) -> Self {
+    fn new(buffer_ms: usize, with_volume_ramp_up_ms: usize) -> Self {
         let buffer_samples = buffer_ms * WHITE_NOISE_SAMPLE_RATE as usize / 1000;
+        let ramp_up_samples = with_volume_ramp_up_ms * WHITE_NOISE_SAMPLE_RATE as usize / 1000;
         Self {
             elapsed: Duration::from_secs(0),
             tick: 0,
-            buffer: (0..buffer_samples).map(|_| random::<f32>() * 1.0 - 2.0).collect(),
+            buffer: (0..buffer_samples).map(|_| {
+                random::<f32>() - 2.0
+            }).collect(),
             buffer_size: buffer_samples,
+            ramp_up_samples,
         }
     }
 }
@@ -32,9 +37,15 @@ impl Iterator for WhiteNoise {
 
     fn next(&mut self) -> Option<f32> {
         self.elapsed += WHITE_NOISE_TICK_DURATION;
-        self.tick = (self.tick + 1) % self.buffer_size;
+        self.tick += 1;
 
-        Some(self.buffer[self.tick])
+        let index: usize = self.tick % self.buffer_size;
+
+        if self.ramp_up_samples > 0 && self.tick < self.ramp_up_samples {
+            return Some(self.buffer[index] * self.tick as f32 / self.ramp_up_samples as f32);
+        }
+
+        Some(self.buffer[index])
     }
 }
 
@@ -61,7 +72,7 @@ fn main() {
 
     // Try to parse the argument as a u16
     let num: usize = args.get(1)
-        .map_or(10000, |arg| arg.parse().unwrap_or_else(|_| {
+        .map_or(30000, |arg| arg.parse().unwrap_or_else(|_| {
             eprintln!("Invalid argument. Exiting.");
             process::exit(1);
         }));
@@ -76,24 +87,27 @@ fn main() {
         }
     };
 
-
     for dev in devices {
-        thread::spawn(move || {
-            let device_name = dev.name().unwrap();
-
-            let source = WhiteNoise::new(num);
-
-            println!("Playing on device: {}", device_name);
-
-            match OutputStream::try_from_device(&dev) {
-                Ok((_stream, stream_handle)) => {
-                    stream_handle.play_raw(source).unwrap();
-                    thread::park();
-                },
-                Err(_) => eprintln!("Error creating stream on device {}", device_name),
-            };
-        });
+        play_noise_on_device(num, &dev);
     }
 
     thread::park()
+}
+
+fn play_noise_on_device(num: usize, dev: &'static Device) {
+    thread::spawn(move || {
+        let device_name = dev.name().unwrap();
+
+        let source = WhiteNoise::new(num, 5000);
+
+        println!("Playing on device: {}", device_name);
+
+        match OutputStream::try_from_device(&dev) {
+            Ok((_stream, stream_handle)) => {
+                stream_handle.play_raw(source).unwrap();
+                thread::park();
+            },
+            Err(_) => eprintln!("Error creating stream on device {}", device_name),
+        };
+    });
 }
