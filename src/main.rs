@@ -71,13 +71,14 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     // Try to parse the argument as a u16
-    let num: usize = args.get(1)
+    let buffer_size_ms: usize = args.get(1)
         .map_or(30000, |arg| arg.parse().unwrap_or_else(|_| {
             eprintln!("Invalid argument. Exiting.");
             process::exit(1);
         }));
 
-    println!("Playing White noise with a {}ms buffer", num);
+    let with_volume_ramp_up_ms = 10000;
+    println!("Playing White noise with a {}ms buffer", buffer_size_ms);
 
     let devices = match cpal::default_host().output_devices() {
         Ok(d) => d,
@@ -88,17 +89,17 @@ fn main() {
     };
 
     for dev in devices {
-        play_noise_on_device(num, &dev);
+        play_noise_on_device(buffer_size_ms, with_volume_ramp_up_ms, dev);
     }
 
     thread::park()
 }
 
-fn play_noise_on_device(num: usize, dev: &'static Device) {
+fn play_noise_on_device(buffer_size_ms: usize, with_volume_ramp_up_ms: usize, dev: Device) {
     thread::spawn(move || {
         let device_name = dev.name().unwrap();
 
-        let source = WhiteNoise::new(num, 5000);
+        let source = WhiteNoise::new(buffer_size_ms, with_volume_ramp_up_ms);
 
         println!("Playing on device: {}", device_name);
 
