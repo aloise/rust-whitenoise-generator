@@ -23,7 +23,8 @@ impl WhiteNoise {
         let ramp_up_samples = with_volume_ramp_up_ms * sample_rate as usize / 1000;
 
         let mut rng = rand::thread_rng();
-        let cutoff_frequency = 60.0; // Hz
+
+        let cutoff_frequency = 100.0; // Hz
         let mut filter = HighPassFilter::new(sample_rate, cutoff_frequency);
         let mut noise_buffer: Vec<f32> = (0..buffer_samples).map(|_| {
             rng.gen::<f32>() * 2.0 - 1.0
