@@ -1,8 +1,11 @@
+mod filters;
+
 use std::time::Duration;
 use std::{env, process, thread};
 use rodio::{cpal, Device, DeviceTrait, OutputStream, source::Source};
 use rand::{Rng};
 use rodio::cpal::traits::HostTrait;
+use filters::HighPassFilter;
 
 // Our own source of white noise.
 struct WhiteNoise {
@@ -20,15 +23,20 @@ impl WhiteNoise {
         let ramp_up_samples = with_volume_ramp_up_ms * sample_rate as usize / 1000;
 
         let mut rng = rand::thread_rng();
+        let cutoff_frequency = 60.0; // Hz
+        let mut filter = HighPassFilter::new(sample_rate, cutoff_frequency);
+        let mut noise_buffer: Vec<f32> = (0..buffer_samples).map(|_| {
+            rng.gen::<f32>() * 2.0 - 1.0
+        }).collect();
+        filter.process_buffer(&mut noise_buffer);
+
 
         Self {
             tick: 0,
-            buffer: (0..buffer_samples).map(|_| {
-                rng.gen::<f32>() * 2.0 - 1.0
-            }).collect(),
+            buffer: noise_buffer.to_vec(),
             buffer_size: buffer_samples,
             ramp_up_samples,
-            sample_rate,
+            sample_rate
         }
     }
 }
@@ -37,13 +45,13 @@ impl Iterator for WhiteNoise {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
-        self.tick += 1;
-
         let index: usize = self.tick % self.buffer_size;
 
         if self.ramp_up_samples > 0 && self.tick < self.ramp_up_samples {
             return Some(self.buffer[index] * self.tick as f32 / self.ramp_up_samples as f32);
         }
+
+        self.tick += 1;
 
         Some(self.buffer[index])
     }
