@@ -65,7 +65,7 @@ mod tests {
 
 
     #[test]
-    fn test_highpass_filter_pass() {
+    fn test_highpass_filter_loss() {
         let sample_rate = 44100;
         let cutoff_frequency = 50.0;
 

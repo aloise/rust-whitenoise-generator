@@ -18,7 +18,7 @@ struct WhiteNoise {
 
 
 impl WhiteNoise {
-    fn new(sample_rate: u32, buffer_ms: usize, with_volume_ramp_up_ms: usize) -> Self {
+    fn new(sample_rate: u32, buffer_ms: usize, with_volume_ramp_up_ms: usize, final_volume: f32) -> Self {
         let buffer_samples = buffer_ms * sample_rate as usize / 1000;
         let ramp_up_samples = with_volume_ramp_up_ms * sample_rate as usize / 1000;
 
@@ -27,7 +27,7 @@ impl WhiteNoise {
         let cutoff_frequency = 100.0; // Hz
         let mut filter = HighPassFilter::new(sample_rate, cutoff_frequency);
         let mut noise_buffer: Vec<f32> = (0..buffer_samples).map(|_| {
-            rng.gen::<f32>() * 2.0 - 1.0
+            rng.gen::<f32>() * 2.0 * final_volume - final_volume
         }).collect();
         filter.process_buffer(&mut noise_buffer);
 
@@ -77,11 +77,11 @@ impl Source for WhiteNoise {
 }
 
 
-fn play_noise_on_device(buffer_size_ms: usize, with_volume_ramp_up_ms: usize, dev: Device) {
+fn play_noise_on_device(buffer_size_ms: usize, with_volume_ramp_up_ms: usize, final_volume: f32, dev: Device) {
     thread::spawn(move || {
         let device_name = dev.name().unwrap();
 
-        let source = WhiteNoise::new(44100, buffer_size_ms, with_volume_ramp_up_ms);
+        let source = WhiteNoise::new(44100, buffer_size_ms, with_volume_ramp_up_ms, final_volume);
 
         println!("Playing on device: {}", device_name);
 
@@ -101,7 +101,7 @@ fn main() {
 
     // Try to parse the argument as a u16
     let buffer_size_ms: usize = args.get(1)
-        .map_or(30000, |arg| arg.parse().unwrap_or_else(|_| {
+        .map_or(0, |arg| arg.parse().unwrap_or_else(|_| {
             eprintln!("Invalid argument. Exiting.");
             process::exit(1);
         }));
@@ -118,7 +118,7 @@ fn main() {
     };
 
     for dev in devices {
-        play_noise_on_device(buffer_size_ms, with_volume_ramp_up_ms, dev);
+        play_noise_on_device(buffer_size_ms, with_volume_ramp_up_ms, 0.5, dev);
     }
 
     thread::park()
