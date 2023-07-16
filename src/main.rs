@@ -114,7 +114,7 @@ fn main() {
         }));
 
     let with_volume_ramp_up_ms = 0;
-    let final_volume = 0.5;
+    let final_volume = 0.2;
     println!("Playing White noise with a {}ms buffer", buffer_size_ms);
 
     // let devices = match cpal::default_host().output_devices() {
