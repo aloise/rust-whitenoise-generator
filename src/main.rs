@@ -14,6 +14,7 @@ struct WhiteNoise {
     buffer_size: usize,
     ramp_up_samples: usize,
     sample_rate: u32,
+    final_volume: f32
 }
 
 
@@ -31,13 +32,13 @@ impl WhiteNoise {
         }).collect();
         filter.process_buffer(&mut noise_buffer);
 
-
         Self {
             tick: 0,
             buffer: noise_buffer.to_vec(),
             buffer_size: buffer_samples,
             ramp_up_samples,
-            sample_rate
+            sample_rate,
+            final_volume,
         }
     }
 }
@@ -46,15 +47,21 @@ impl Iterator for WhiteNoise {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
-        let index: usize = self.tick % self.buffer_size;
 
-        if self.ramp_up_samples > 0 && self.tick < self.ramp_up_samples {
-            return Some(self.buffer[index] * self.tick as f32 / self.ramp_up_samples as f32);
-        }
+        let sample = if self.buffer_size <= 0 {
+            self.final_volume * (rand::thread_rng().gen::<f32>() * 2.0 *  - 1.0)
+        } else {
+            self.buffer[ self.tick % self.buffer_size]
+        };
 
         self.tick += 1;
 
-        Some(self.buffer[index])
+        if self.ramp_up_samples > 0 && self.tick < self.ramp_up_samples {
+            return Some(sample * self.tick as f32 / self.ramp_up_samples as f32);
+        }
+
+
+        Some(sample)
     }
 }
 
@@ -101,25 +108,29 @@ fn main() {
 
     // Try to parse the argument as a u16
     let buffer_size_ms: usize = args.get(1)
-        .map_or(0, |arg| arg.parse().unwrap_or_else(|_| {
+        .map_or(30000, |arg| arg.parse().unwrap_or_else(|_| {
             eprintln!("Invalid argument. Exiting.");
             process::exit(1);
         }));
 
-    let with_volume_ramp_up_ms = 10000;
+    let with_volume_ramp_up_ms = 0;
+    let final_volume = 0.5;
     println!("Playing White noise with a {}ms buffer", buffer_size_ms);
 
-    let devices = match cpal::default_host().output_devices() {
-        Ok(d) => d,
-        Err(_) => {
-            eprintln!("Invalid argument. Exiting.");
-            process::exit(2)
-        }
-    };
+    // let devices = match cpal::default_host().output_devices() {
+    //     Ok(d) => d,
+    //     Err(_) => {
+    //         eprintln!("Error getting output devices. Exiting.");
+    //         process::exit(2)
+    //     }
+    // };
+    //
+    // for dev in devices {
+    //     play_noise_on_device(buffer_size_ms, with_volume_ramp_up_ms, 0.5, dev);
+    // }
 
-    for dev in devices {
-        play_noise_on_device(buffer_size_ms, with_volume_ramp_up_ms, 0.5, dev);
-    }
+    let dev = cpal::default_host().default_output_device().unwrap();
+    play_noise_on_device(buffer_size_ms, with_volume_ramp_up_ms, final_volume, dev);
 
     thread::park()
 }
